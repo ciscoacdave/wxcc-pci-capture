@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Secure Payment Capture — WxCC Desktop Widget</title>
+<style>
+  :root{
+    --surface:#eef2f7;
+    --panel:#ffffff;
+    --ink:#101828;
+    --muted:#667085;
+    --faint:#98a2b3;
+    --line:#e2e8f2;
+    --brand:#1d4ed8;
+    --brand-soft:#eaf0ff;
+    --live:#e11d48;
+    --live-soft:#fff1f4;
+    --secure:#047857;
+    --secure-soft:#e7f6f0;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 8px 24px -12px rgba(16,24,40,.18);
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Code","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:var(--sans);
+    color:var(--ink);
+    background:var(--surface);
+    -webkit-font-smoothing:antialiased;
+    font-size:14px;
+    line-height:1.5;
+  }
+  .app{
+    max-width:1120px;margin:0 auto;padding:20px;
+    display:grid;grid-template-columns:1.35fr 1fr;gap:20px;
+    min-height:100%;
+  }
+  @media (max-width:860px){.app{grid-template-columns:1fr}}
+
+  /* ---- shared panel ---- */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow)}
+  .pad{padding:20px}
+
+  /* ---- call context header ---- */
+  .caller{display:flex;align-items:center;gap:14px;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .avatar{width:44px;height:44px;border-radius:50%;background:var(--brand-soft);color:var(--brand);
+    display:grid;place-items:center;font-weight:600;font-size:16px;flex:none}
+  .caller h1{font-size:15px;margin:0;font-weight:600;letter-spacing:-.01em}
+  .caller .sub{color:var(--muted);font-size:12.5px}
+  .caller .meta{margin-left:auto;text-align:right;font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.7}
+  .caller .meta b{color:var(--muted);font-weight:500}
+
+  /* ---- recording state hero ---- */
+  .rec{
+    margin:0;padding:22px 20px;display:flex;align-items:center;gap:16px;
+    border-bottom:1px solid var(--line);
+    transition:background .4s ease;
+  }
+  .rec.live{background:var(--live-soft)}
+  .rec.paused{background:var(--secure-soft)}
+  .rec .dot{width:16px;height:16px;border-radius:50%;flex:none;position:relative}
+  .rec.live .dot{background:var(--live)}
+  .rec.live .dot::after{content:"";position:absolute;inset:-6px;border-radius:50%;
+    background:var(--live);opacity:.35;animation:pulse 1.6s ease-out infinite}
+  .rec.paused .dot{background:var(--secure)}
+  @keyframes pulse{0%{transform:scale(.6);opacity:.5}100%{transform:scale(1.7);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.rec.live .dot::after{animation:none}}
+  .rec .label{font-weight:600;font-size:16px;letter-spacing:-.01em}
+  .rec.live .label{color:var(--live)}
+  .rec.paused .label{color:var(--secure)}
+  .rec .state-note{font-size:12.5px;color:var(--muted);margin-top:1px}
+  .rec .lock{margin-left:auto;font-size:22px;opacity:.85}
+
+  /* ---- steps ---- */
+  .steps{display:flex;gap:0;padding:16px 20px 4px;font-size:12px;color:var(--faint)}
+  .steps .s{display:flex;align-items:center;gap:8px;flex:1}
+  .steps .s .n{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);
+    display:grid;place-items:center;font-weight:600;font-size:11px;background:var(--panel);color:var(--faint)}
+  .steps .s.active .n{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
+  .steps .s.done .n{border-color:var(--secure);color:#fff;background:var(--secure)}
+  .steps .s.active span,.steps .s.done span{color:var(--ink)}
+  .steps .s .bar{flex:1;height:1.5px;background:var(--line);margin:0 8px}
+  .steps .s:last-child .bar{display:none}
+
+  /* ---- card form ---- */
+  .form{padding:8px 20px 20px}
+  .form.locked{opacity:.45;pointer-events:none;filter:grayscale(.3)}
+  .field{margin-top:14px}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:500}
+  .field input{
+    width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:9px;
+    font-family:var(--mono);font-size:14.5px;letter-spacing:.04em;background:#fbfcfe;color:var(--ink);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .field input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);background:#fff}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+  /* ---- buttons ---- */
+  .actions{padding:16px 20px 20px;display:flex;gap:10px;border-top:1px solid var(--line)}
+  button{font-family:var(--sans);font-size:13.5px;font-weight:600;border-radius:9px;
+    padding:11px 16px;border:1px solid transparent;cursor:pointer;transition:.15s;letter-spacing:-.005em}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .btn-secure{background:var(--secure);color:#fff}
+  .btn-secure:not(:disabled):hover{background:#036a4d}
+  .btn-live{background:var(--live);color:#fff}
+  .btn-live:not(:disabled):hover{background:#c11540}
+  .btn-ghost{background:var(--panel);color:var(--muted);border-color:var(--line)}
+  .btn-ghost:not(:disabled):hover{background:var(--surface);color:var(--ink)}
+  .grow{flex:1}
+
+  /* ---- token result ---- */
+  .token{margin:0 20px 4px;padding:12px 14px;border-radius:10px;background:var(--secure-soft);
+    border:1px solid #b9e6d4;font-size:12.5px;color:#065f46;display:none}
+  .token.show{display:block}
+  .token code{font-family:var(--mono);background:#fff;padding:2px 6px;border-radius:5px;border:1px solid #b9e6d4}
+
+  /* ---- audit rail ---- */
+  .rail{display:flex;flex-direction:column}
+  .rail-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .rail-head h2{font-size:13px;margin:0;font-weight:600;letter-spacing:-.01em}
+  .rail-head .tag{margin-left:auto;font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:20px;
+    font-family:var(--mono);letter-spacing:.02em}
+  .tag.sim{background:#fef3e2;color:#b45309;border:1px solid #f7d9a8}
+  .tag.live-env{background:var(--secure-soft);color:var(--secure);border:1px solid #b9e6d4}
+  .log{padding:12px 16px;overflow:auto;flex:1;max-height:560px}
+  .entry{display:flex;gap:10px;padding:9px 4px;border-bottom:1px dashed var(--line);font-size:12px}
+  .entry:last-child{border-bottom:none}
+  .entry .t{font-family:var(--mono);font-size:10.5px;color:var(--faint);flex:none;padding-top:1px;width:66px}
+  .entry .body{flex:1;min-width:0}
+  .entry .body .op{font-family:var(--mono);font-size:11.5px;color:var(--ink);word-break:break-word}
+  .entry .body .desc{color:var(--muted);margin-top:2px}
+  .entry.pause{background:linear-gradient(90deg,var(--secure-soft),transparent);border-radius:6px}
+  .entry.resume{background:linear-gradient(90deg,var(--live-soft),transparent);border-radius:6px}
+  .dirn{font-weight:600;font-size:10px;padding:1px 5px;border-radius:4px;margin-right:6px;font-family:var(--mono)}
+  .dirn.req{background:var(--brand-soft);color:var(--brand)}
+  .dirn.res{background:#f1f3f7;color:var(--muted)}
+  .empty{color:var(--faint);font-size:12px;text-align:center;padding:24px 0}
+
+  .disclaimer{grid-column:1/-1;text-align:center;color:var(--faint);font-size:11.5px;padding:4px 8px 12px;line-height:1.6}
+  .disclaimer b{color:var(--muted);font-weight:600}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= LEFT: agent capture flow ================= -->
+  <section class="panel">
+    <div class="caller">
+      <div class="avatar">MR</div>
+      <div>
+        <h1>Maria Reyes</h1>
+        <div class="sub">Inbound · Billing &amp; Payments queue</div>
+      </div>
+      <div class="meta">
+        <div><b>interaction</b> <span id="iid">—</span></div>
+        <div><b>duration</b> <span id="dur">00:00</span></div>
+      </div>
+    </div>
+
+    <div class="rec live" id="rec">
+      <div class="dot"></div>
+      <div>
+        <div class="label" id="recLabel">Recording</div>
+        <div class="state-note" id="recNote">Call is being recorded — do not collect card details yet.</div>
+      </div>
+      <div class="lock" id="recLock">●</div>
+    </div>
+
+    <div class="steps" id="steps">
+      <div class="s active" data-step="1"><div class="n">1</div><span>Verify caller</span><div class="bar"></div></div>
+      <div class="s" data-step="2"><div class="n">2</div><span>Secure capture</span><div class="bar"></div></div>
+      <div class="s" data-step="3"><div class="n">3</div><span>Resume &amp; wrap</span><div class="bar"></div></div>
+    </div>
+
+    <div class="form locked" id="form">
+      <div class="field">
+        <label for="name">Name on card</label>
+        <input id="name" autocomplete="off" placeholder="Maria Reyes" />
+      </div>
+      <div class="field">
+        <label for="pan">Card number <span id="panHint" style="color:var(--secure)"></span></label>
+        <input id="pan" inputmode="numeric" autocomplete="off" placeholder="•••• •••• •••• ••••" maxlength="23" />
+      </div>
+      <div class="row">
+        <div class="field"><label for="exp">Expiry</label><input id="exp" autocomplete="off" placeholder="MM / YY" maxlength="7" /></div>
+        <div class="field"><label for="cvv">CVV</label><input id="cvv" inputmode="numeric" autocomplete="off" placeholder="•••" maxlength="4" /></div>
+      </div>
+    </div>
+
+    <div class="token" id="token"></div>
+
+    <div class="actions">
+      <button class="btn-secure grow" id="btnBegin">Begin secure capture</button>
+      <button class="btn-live grow" id="btnComplete" disabled>Complete &amp; resume recording</button>
+      <button class="btn-ghost" id="btnReset" title="Reset demo">Reset</button>
+    </div>
+  </section>
+
+  <!-- ================= RIGHT: compliance / audit rail ================= -->
+  <aside class="panel rail">
+    <div class="rail-head">
+      <h2>Recording &amp; compliance trail</h2>
+      <span class="tag" id="envTag">…</span>
+    </div>
+    <div class="log" id="log">
+      <div class="empty" id="logEmpty">SDK events will appear here as the call progresses.</div>
+    </div>
+  </aside>
+
+  <p class="disclaimer">
+    <b>Demo only.</b> No card data leaves this browser and nothing is stored. In production, card entry is handled by a
+    PCI‑DSS compliant hosted‑fields gateway that tokenizes the PAN — the widget orchestrates pause/resume and never
+    sees raw card data. Pausing the recording keeps the PAN out of the voice/DTMF recording.
+  </p>
+</div>
+
+<script>
+/* ============================================================================
+   Webex Contact Center — Secure Payment Capture widget (demo)
+   Pattern: pause call recording during PCI card capture, resume when complete.
+
+   REAL DESKTOP INTEGRATION (bundled widget):
+   --------------------------------------------------------------------------
+   import { Desktop } from '@wxcc-desktop/sdk';
+   Desktop.config.init();
+   const taskMap = await Desktop.actions.getTaskMap();          // live task(s)
+   const interactionId = [...taskMap.values()][0].interactionId;
+
+   await Desktop.agentContact.pauseRecording({ interactionId });
+   await Desktop.agentContact.resumeRecording({
+     interactionId, data: { autoResumed: false }
+   });
+   --------------------------------------------------------------------------
+   This file auto-detects a live SDK (window.Desktop). If absent, it runs in
+   SIMULATION MODE so the same file demos on a laptop or inside the desktop.
+   ========================================================================== */
+
+const LIVE = typeof window.Desktop !== 'undefined' && window.Desktop?.agentContact;
+
+// ---- controller: real SDK vs simulated ------------------------------------
+const controller = LIVE ? {
+  mode:'live',
+  async getInteractionId(){
+    const map = await window.Desktop.actions.getTaskMap();
+    for (const [, task] of map) return task.interactionId;
+    return null;
+  },
+  pause(id){ return window.Desktop.agentContact.pauseRecording({ interactionId:id }); },
+  resume(id){ return window.Desktop.agentContact.resumeRecording({ interactionId:id, data:{ autoResumed:false } }); }
+} : {
+  mode:'sim',
+  async getInteractionId(){ return guid(); },
+  pause(id){ return delay(420).then(()=>({ interactionId:id, isRecording:false })); },
+  resume(id){ return delay(420).then(()=>({ interactionId:id, isRecording:true })); }
+};
+
+function guid(){
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{
+    const r=Math.random()*16|0, v=c==='x'?r:(r&0x3|0x8); return v.toString(16);
+  });
+}
+const delay = ms => new Promise(r=>setTimeout(r,ms));
+
+// ---- element refs ----------------------------------------------------------
+const $ = s => document.querySelector(s);
+const rec=$('#rec'), recLabel=$('#recLabel'), recNote=$('#recNote'), recLock=$('#recLock');
+const form=$('#form'), token=$('#token');
+const btnBegin=$('#btnBegin'), btnComplete=$('#btnComplete'), btnReset=$('#btnReset');
+const logEl=$('#log'), logEmpty=$('#logEmpty'), envTag=$('#envTag');
+const iidEl=$('#iid');
+
+let interactionId=null;
+let recording=true;
+
+// ---- env tag ---------------------------------------------------------------
+if(controller.mode==='live'){ envTag.textContent='LIVE SDK'; envTag.className='tag live-env'; }
+else { envTag.textContent='SIMULATION'; envTag.className='tag sim'; }
+
+// ---- call duration ticker --------------------------------------------------
+let t=0; setInterval(()=>{ t++; const m=String(Math.floor(t/60)).padStart(2,'0'),
+  s=String(t%60).padStart(2,'0'); $('#dur').textContent=`${m}:${s}`; },1000);
+
+// ---- audit log -------------------------------------------------------------
+function log({op, desc, dir, kind}){
+  logEmpty.style.display='none';
+  const now=new Date();
+  const ts=now.toLocaleTimeString('en-US',{hour12:false})+'.'+String(now.getMilliseconds()).padStart(3,'0').slice(0,2);
+  const e=document.createElement('div');
+  e.className='entry'+(kind?' '+kind:'');
+  e.innerHTML=`<div class="t">${ts}</div><div class="body">
+     <div class="op">${dir?`<span class="dirn ${dir}">${dir.toUpperCase()}</span>`:''}${op}</div>
+     ${desc?`<div class="desc">${desc}</div>`:''}</div>`;
+  logEl.appendChild(e);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+// ---- state paint -----------------------------------------------------------
+function paintRecording(on){
+  recording=on;
+  rec.className='rec '+(on?'live':'paused');
+  recLabel.textContent = on?'Recording':'Recording paused — secure capture';
+  recNote.textContent  = on
+    ? 'Call is being recorded — do not collect card details.'
+    : 'Safe to collect card details. This segment is NOT in the recording.';
+  recLock.textContent = on?'●':'🔒';
+}
+function setStep(n){
+  document.querySelectorAll('.steps .s').forEach(s=>{
+    const step=+s.dataset.step;
+    s.classList.toggle('done', step<n);
+    s.classList.toggle('active', step===n);
+  });
+}
+
+// ---- init ------------------------------------------------------------------
+(async function init(){
+  interactionId = await controller.getInteractionId();
+  iidEl.textContent = interactionId ? interactionId.slice(0,8)+'…' : 'n/a';
+  log({op:`Desktop.actions.getTaskMap()`, dir:'req', desc:'Resolving active interaction'});
+  log({op:`interactionId = "${interactionId}"`, dir:'res', desc:`Recording mode: On Demand w/ Pause/Resume · env: ${controller.mode}`});
+})();
+
+// ---- begin secure capture: PAUSE recording --------------------------------
+btnBegin.addEventListener('click', async ()=>{
+  btnBegin.disabled=true;
+  log({op:`agentContact.pauseRecording({ interactionId })`, dir:'req',
+       desc:'Agent initiated PCI capture', kind:'pause'});
+  try{
+    const res = await controller.pause(interactionId);
+    paintRecording(false);
+    setStep(2);
+    form.classList.remove('locked');
+    $('#name').focus();
+    btnComplete.disabled=false;
+    log({op:`→ 200 OK · isRecording=false`, dir:'res',
+         desc:'PAN entry window open — recording suppressed', kind:'pause'});
+  }catch(err){
+    btnBegin.disabled=false;
+    log({op:`✕ pauseRecording failed`, dir:'res', desc:String(err)});
+  }
+});
+
+// ---- complete: tokenize (sim) + RESUME recording --------------------------
+btnComplete.addEventListener('click', async ()=>{
+  btnComplete.disabled=true;
+  const last4=($('#pan').value.replace(/\D/g,'').slice(-4))||'0000';
+  log({op:`payment gateway → tokenize(PAN)`, dir:'req', desc:'Hosted fields → token (PAN never touches WxCC)'});
+  await delay(360);
+  const tok='tok_'+guid().replace(/-/g,'').slice(0,16);
+  log({op:`token = "${tok}"`, dir:'res', desc:`Card ···· ${last4} · authorized`});
+
+  log({op:`agentContact.resumeRecording({ interactionId, data:{ autoResumed:false } })`,
+       dir:'req', desc:'Capture complete — restoring recording', kind:'resume'});
+  try{
+    await controller.resume(interactionId);
+    paintRecording(true);
+    setStep(3);
+    form.classList.add('locked');
+    token.classList.add('show');
+    token.innerHTML=`Payment tokenized &amp; recording resumed. Token <code>${tok}</code> · card ···· ${last4}. No PAN in recording or in WxCC.`;
+    btnReset.focus();
+    log({op:`→ 200 OK · isRecording=true`, dir:'res', desc:'Recording restored for wrap-up', kind:'resume'});
+  }catch(err){
+    log({op:`✕ resumeRecording failed`, dir:'res', desc:String(err)});
+  }
+});
+
+// ---- reset -----------------------------------------------------------------
+btnReset.addEventListener('click', ()=>{
+  ['name','pan','exp','cvv'].forEach(id=>$('#'+id).value='');
+  form.classList.add('locked');
+  token.classList.remove('show');
+  paintRecording(true); setStep(1);
+  btnBegin.disabled=false; btnComplete.disabled=true;
+  logEl.innerHTML='<div class="empty" id="logEmpty">SDK events will appear here as the call progresses.</div>';
+  $('#logEmpty').style.display='block';
+  init2();
+});
+async function init2(){
+  interactionId = await controller.getInteractionId();
+  iidEl.textContent = interactionId ? interactionId.slice(0,8)+'…' : 'n/a';
+  log({op:`Desktop.actions.getTaskMap()`, dir:'req', desc:'Resolving active interaction'});
+  log({op:`interactionId = "${interactionId}"`, dir:'res', desc:`env: ${controller.mode}`});
+}
+
+// ---- light input formatting (display only) --------------------------------
+$('#pan').addEventListener('input', e=>{
+  let v=e.target.value.replace(/\D/g,'').slice(0,16);
+  e.target.value=v.replace(/(.{4})/g,'$1 ').trim();
+  $('#panHint').textContent = v.length>=12 ? '· entered securely' : '';
+});
+$('#exp').addEventListener('input', e=>{
+  let v=e.target.value.replace(/\D/g,'').slice(0,4);
+  e.target.value = v.length>2 ? v.slice(0,2)+' / '+v.slice(2) : v;
+});
+$('#cvv').addEventListener('input', e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,4); });
+</script>
+</body>
+</html>
